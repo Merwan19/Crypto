@@ -1,3 +1,0 @@
-bernard 123456
-alfred 456789
-roger 789123
