@@ -11,7 +11,6 @@
 #include <openssl/aes.h>
 #include <openssl/ssl.h>
 #include <openssl/pem.h>
-
 #define K_LENGHT 256
 
 /*

@@ -2,9 +2,15 @@
 
 char *base64encode (const void *b64_encode_this, int encode_this_many_bytes);
 char *base64decode (const void *b64_decode_this, int decode_this_many_bytes);
-static void sig_handler (int i);
 
 char K[K_LENGHT];
+
+int
+min (int a, int b)
+{
+  return a > b ? b : a;
+}
+
 
 int
 main (int argc, char *argv[])
@@ -43,6 +49,7 @@ main (int argc, char *argv[])
     {
       // On affiche un message d'erreur si on veut
       printf ("Impossible d'ouvrir le fichier %s", argv[1]);
+      exit (EXIT_FAILURE);
     }
 
 
@@ -62,9 +69,11 @@ main (int argc, char *argv[])
     {
       // On affiche un message d'erreur si on veut
       printf ("Impossible d'ouvrir le fichier %s", argv[2]);
+      exit (EXIT_FAILURE);
     }
 
 //<<------------- Hash des clés c1 et c2 ------------------->> //
+
   if (simpleSHA256 (c1, 32, dgst_c1) == 1)
     {
       //  printf ("HashCrypted : \n%s\n", dgst_c1);
@@ -76,13 +85,16 @@ main (int argc, char *argv[])
       //  printf ("Hash64 : %s\n", base64encode (dgst_c2, 32));
     }
 
-//<<------------- Generation de la clé K ------------------->> //
+//<<------------- Generation de la clé K et effacer les sous clé en mémoire----------------->> //
   AES_set_encrypt_key (c1, 128, &wctx);
   AES_encrypt (c2, K, &wctx);
   //printf ("final key K = %s\n", base64encode (K, 16));
   //printf ("final key K crypted = %s\n", K);
+  memset (c1, 0, K_LENGHT);
+  memset (c2, 0, K_LENGHT);
 
-//<<------------- Crypter le fichier ------------------->> //
+
+//<<------------- RAZ Crypter un fichier temoin ------------------->> //
 /*
   fIN = fopen ("file.txt", "rb+");
   fOUT = fopen ("file.bin", "wb+");
@@ -107,23 +119,10 @@ fIN = fopen ("file2.bin", "rb+");
   fclose (fIN);
 */
 
-//<<------------- Association des signaux ------------------->> //
-/*
-  if (signal (SIGUSR1, sig_handler) == SIG_ERR)
-    {
-      perror ("signal");
-      exit (EXIT_FAILURE);
-    }
-  if (signal (SIGUSR2, sig_handler) == SIG_ERR)
-    {
-      perror ("signal");
-      exit (EXIT_FAILURE);
-    }
-*/
 //<<------------- Boucle d'execution ------------------->> //
   while (1)
     {
-      printf ("Select function : find , write , all :\n>");
+      printf ("Select function : find , write , all, reset :\n>");
       scanf ("%s", strmode);
       if (strstr (strmode, "all"))
 	{
@@ -144,11 +143,31 @@ fIN = fopen ("file2.bin", "rb+");
       else if (strstr (strmode, "write"))
 	{
 	  printf ("<--------------WRITE MODE------------------>\n");
-	  printf ("Enter a name and a cardNum\n");
+	  printf ("Enter a name and a cardNum format: \"id#cardnum\"\n");
 	  scanf ("%s", str1);
-	  fIN = fopen ("file.bin", "rb");
-	  fOUT = fopen ("file2.bin", "wb+");
-	  decrypt_write (fIN, fOUT, K, str1);
+	  if (NULL != strchr (str1, '#'))
+	    {
+	      fIN = fopen ("file.bin", "rb");
+	      fOUT = fopen ("file2.bin", "wb+");
+	      decrypt_write (fIN, fOUT, K, str1);
+	    }
+	  else
+	    {
+	      printf ("Line format not recognized\n");
+	    }
+	}
+      else if (strstr (strmode, "reset"))
+	{
+	  fIN = fopen ("file.txt", "rb+");
+	  fOUT = fopen ("file.bin", "wb+");
+	  encrypt (fIN, fOUT, K);
+	  fclose (fIN);
+	  fclose (fOUT);
+	}
+      else
+	{
+	  printf ("<Wrong argument>\n");
+
 	}
 
 
@@ -161,41 +180,11 @@ fIN = fopen ("file2.bin", "rb+");
 
 }
 
-static void
-sig_handler (int signum)
-{
-  unsigned char str1[20];
-  FILE *fIN;
-  if (signum == SIGUSR1)
-    {
-      fflush (NULL);
-      printf ("reception signal\nSelect a name or a cardNum\n");
-      fflush (NULL);
-      scanf ("%s", str1);
-      fIN = fopen ("file.bin", "rb+");
-      decrypt_search (fIN, K, str1);
-      fclose (fIN);
-    }
-  if (signum == SIGUSR2)
-    {
-      fflush (NULL);
-      printf ("reception signal\n");
-      fflush (NULL);
-    }
-  else
-    {
-      fflush (NULL);
-      printf ("Reçu signal inattendu\n");
-      fflush (NULL);
-      _exit (EXIT_FAILURE);
-    }
-}
-
-
 
 char *
 decrypt_write (FILE * ifp, FILE * fout, char *ckey, char *n)
 {
+
   //Get file size
   fseek (ifp, 0L, SEEK_END);
   int fsize = ftell (ifp);
@@ -246,6 +235,7 @@ decrypt_write (FILE * ifp, FILE * fout, char *ckey, char *n)
   outLen2 = 0;
   unsigned char *out = malloc (fsize * 2);
 
+
   //Set up encryption
   EVP_CIPHER_CTX ctx_en;
   EVP_EncryptInit (&ctx_en, EVP_aes_128_ecb (), ckey, NULL);
@@ -258,7 +248,6 @@ decrypt_write (FILE * ifp, FILE * fout, char *ckey, char *n)
 void
 decrypt_search (FILE * ifp, char *ckey, char *n)
 {
-
   //Get file size
   fseek (ifp, 0L, SEEK_END);
   int fsize = ftell (ifp);
@@ -271,7 +260,16 @@ decrypt_search (FILE * ifp, char *ckey, char *n)
   unsigned char *outdata = malloc (fsize * 2);
   int i = 0;
   int j = 0;
+  int u = 0;
+  int k = 0;
+  unsigned char *ligne;
 
+  int ns = 0;
+  while (n[ns] != '\0')
+    ns++;
+
+  unsigned char *ncpy = malloc (ns * sizeof (char));
+  memcpy (ncpy, n, ns);
   //Read File
   fread (indata, sizeof (char), fsize, ifp);
 
@@ -280,29 +278,30 @@ decrypt_search (FILE * ifp, char *ckey, char *n)
   EVP_DecryptInit (&ctx, EVP_aes_128_ecb (), ckey, NULL);
   EVP_DecryptUpdate (&ctx, outdata, &outLen1, indata, fsize);
   EVP_DecryptFinal (&ctx, outdata + outLen1, &outLen2);
+  outdata[outLen1 + outLen2] = '\0';
 
-  unsigned char *cherch = strchr (outdata, '\n');
-  unsigned char ligne[strlen (outdata) - strlen (cherch) + 1];
 
-  while (cherch != NULL)
+  while (outdata[k] != '\0')
     {
-      j = 0;
-      //printf ("Occurence de retour chariot trouvé octet %lu\n",strlen(outdata)-strlen(cherch)+1);
-      while (i < strlen (outdata) - strlen (cherch) + 1)
+      u = 0;
+      while (outdata[k + u] != '\n' && outdata[k + u] != '\0')
+	u++;
+      ligne = malloc (u * sizeof (char));
+      memcpy (ligne, outdata + k * sizeof (char), u);
+      ligne[u] = '\0';
+      i = ns < u && ligne[ns] == '#';
+      for (j = 0; j < ns && j < u; j++)
 	{
-	  ligne[j] = outdata[i];
-	  j++;
-	  i++;
+	  i = i && (ligne[j] == ncpy[j]);
 	}
-//compare la ligne lu avec le ligne en parametres
-      if (strstr (ligne, n))
-	printf (" ==> %s\n", ligne);
-
-      i = strlen (outdata) - strlen (cherch) + 1;
-      cherch = strchr (cherch + 1, '\n');
-      memset (ligne, 0, i);
-//  ligne =(char *) realloc(ligne,i);
+      if (i == 1 && u > 1)
+	{
+	  printf ("===>%s\n", ligne);
+	}
+      free (ligne);
+      k += u + 1;
     }
+
 }
 
 void
@@ -330,120 +329,13 @@ decrypt_all (FILE * ifp, char *ckey)
   EVP_DecryptInit (&ctx, EVP_aes_128_ecb (), ckey, NULL);
   EVP_DecryptUpdate (&ctx, outdata, &outLen1, indata, fsize);
   EVP_DecryptFinal (&ctx, outdata + outLen1, &outLen2);
+  outdata[outLen1 + outLen2] = '\0';
+  printf ("%s", outdata);
 
-  unsigned char *cherch = strchr (outdata, '\n');
-  unsigned char ligne[strlen (outdata) - strlen (cherch) + 1];
 
-  while (cherch != NULL)
-    {
-      j = 0;
-      //printf ("Occurence de retour chariot trouvé octet %lu\n",strlen(outdata)-strlen(cherch)+1);
-      while (i < strlen (outdata) - strlen (cherch) + 1)
-	{
-	  ligne[j] = outdata[i];
-	  j++;
-	  i++;
-	}
-      ligne[j] = '\0';
-//compare la ligne lu avec le ligne en parametres
-
-      printf (" ==> %s", ligne);
-
-      i = strlen (outdata) - strlen (cherch) + 1;
-      cherch = strchr (cherch + 1, '\n');
-      memset (ligne, 0, i);
-//  ligne =(char *) realloc(ligne,i);
-    }
 }
 
-/*
-void
-encrypt_in_file (char * out, char *ckey)
-{
-FILE * ofp;
-ofp = fopen ("file.bin", "wb+");
-  int fsize = strlen(out);
 
-
-  int outLen1 = 0;
-  int outLen2 = 0;
-  unsigned char *indata = malloc (fsize);
-  unsigned char *outdata = malloc (fsize * 2);
-
-  //Read File
-  strcpy(indata,out);
-
-  //Set up encryption
-  EVP_CIPHER_CTX ctx;
-  EVP_EncryptInit (&ctx, EVP_aes_128_ecb (), ckey, NULL);
-  EVP_EncryptUpdate (&ctx, outdata, &outLen1, indata, fsize);
-  EVP_EncryptFinal (&ctx, outdata + outLen1, &outLen2);
-  fwrite (outdata, sizeof (char), outLen1 + outLen2, ofp);
-}
-*/
-/*
-Encrypte ls lignes suivantes dans le fichier file.bin
-unsigned char *entry1 = "Bernard 123456789";
-unsigned char *entry2 = "Roger 987654321";
-unsigned char *entry3 = "Albert 789456132";
-
-Chaque ligne est crypté avec la clé en parametres.
-
-Dans un second temps on peut crypter totalement le fichier avec la clé afin de dissimuler les \n
-*/
-/*
-void
-encrypt_data (FILE * ifp, FILE * ofp, char *ckey)
-{
-
-
-  AES_KEY wctx;
-  unsigned char *entry1 = "Bernard 123456789";
-  unsigned char *entry2 = "Roger 987654321";
-  unsigned char *entry3 = "Albert 789456132";
-  unsigned char out1[17];
-  unsigned char out2[17];
-  unsigned char out3[17];
-
-  AES_set_encrypt_key (ckey, 128, &wctx);
-
-
-  AES_encrypt (entry1, out1, &wctx);
-  out1[17] = '\n';
-  fwrite (out1, sizeof (char), strlen (out1), ofp);
-
-  AES_encrypt (entry2, out2, &wctx);
-  out2[17] = '\n';
-  fwrite (out2, sizeof (char), strlen (out2), ofp);
-
-  AES_encrypt (entry3, out3, &wctx);
-  out3[17] = '\n';
-  fwrite (out3, sizeof (char), strlen (out3), ofp);
-}
-*/
-/*
-Decrypte les lignes du fichier file.bin une a une.
-*/
-
-/*
-void
-decrypt_data (FILE * ifp, FILE * ofp, char *ckey)
-{
-
-
-  AES_KEY wctx;
-  unsigned char ligne[128];
-
-  while (fgets (ligne, 128, ifp) != NULL)
-    {
-      unsigned char out[128];
-      AES_set_decrypt_key (ckey, 128, &wctx);
-      AES_decrypt (ligne, out, &wctx);
-      printf ("%s\n", out);
-    }
-
-}
-*/
 
 void
 decrypt (FILE * ifp, FILE * ofp, char *ckey)
@@ -474,7 +366,6 @@ decrypt (FILE * ifp, FILE * ofp, char *ckey)
   unsigned char *cherch = strchr (outdata, '\n');
   while (cherch != NULL)
     {
-      //printf ("Occurence de retour chariot trouvé octet %lu\n",strlen(outdata)-strlen(cherch)+1);
       while (i < strlen (outdata) - strlen (cherch) + 1)
 	{
 	  printf ("%c", outdata[i]);
