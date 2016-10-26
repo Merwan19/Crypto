@@ -17,10 +17,11 @@
 /*
 void decrypt_data(FILE *ifp,FILE *ofp,char* ckey);
 void encrypt_data(FILE *ifp,FILE *ofp,char* ckey);
+void encrypt_in_file (char * out, char *ckey);
 */
 void decrypt(FILE *ifp, FILE *ofp,char* ckey);
 
-void decrypt_write(FILE *ifp,char* ckey,char* n);
+char* decrypt_write(FILE *ifp,FILE *ofp,char* ckey,char* n);
 void decrypt_search(FILE *ifp,char* ckey,char* n);
 void decrypt_all(FILE *ifp,char* ckey);
 

@@ -1,5 +1,5 @@
 CC=	gcc
-CFLAGS=	
+CFLAGS=	-g
 LIB=	-lmd -lssl -lcrypto
 
 proc: proc.o proc.c proc.h
